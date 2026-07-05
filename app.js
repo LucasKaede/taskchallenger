@@ -1,8 +1,11 @@
 // ==========================================
-// [設定] スプレッドシート連携 (開発者用データ抽出URL)
+// [設定] スプレッドシート連携とパス設定
 // ==========================================
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQmO9lQYhBm7xWmsGEWQ4RvBLeHQfnxbA3h_SmF_i-fPqScsll-bQMJGmT8klBaZUa3H0V-Df37EMQ/pub?output=csv";
-const IMG_BASE_PATH = "images/"; // サーバーの画像格納フォルダ
+const IMG_BASE_PATH = "images/"; 
+const VOICE_BASE_PATH = "voices/"; 
+const BGM_BASE_PATH = "bgm/"; 
+const VOICE_EXT = ".m4a"; 
 
 // --- 初期データ・状態管理 ---
 let playerName = localStorage.getItem('oshi_player_name') || "";
@@ -15,12 +18,60 @@ const currentDay = todayDate.getDay();
 const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
 
 let charDatabase = {}; 
-const fallbackEmojis = ["😊","😐","😑","😍","🥺"]; // 画像がない場合の予備絵文字
+const fallbackEmojis = ["😊","😐","😑","😍","🥺"]; 
 const globalImageCache = []; 
+const imgStatus = {}; 
 
 let currentCharId = localStorage.getItem('oshi_char') || "";
 let activeQuests = []; 
 let activeOperations = [];
+
+// ==========================================
+// 音声・BGMのグローバルオブジェクト
+// ==========================================
+let currentAudio = null;
+let isVoiceMuted = false;
+let isBgmMuted = false;
+
+// 【新規】BGMの番号管理（今後 02, 03 と増やすための変数）
+let currentBgmTrack = "01"; 
+
+// BGM設定（かなり小さめの音量 5% でループ設定）
+let bgmAudio = new Audio(`${BGM_BASE_PATH}background_${currentBgmTrack}.mp3`);
+bgmAudio.loop = true;
+bgmAudio.volume = 0.05; 
+
+// ミュート切り替え関数
+function toggleVoiceMute() {
+  isVoiceMuted = !isVoiceMuted;
+  const btn = document.getElementById('btnVoiceMute');
+  if (isVoiceMuted) {
+    btn.classList.add('muted');
+    btn.innerText = "🗣️ ボイス: OFF";
+    if (currentAudio) currentAudio.pause(); 
+  } else {
+    btn.classList.remove('muted');
+    btn.innerText = "🗣️ ボイス: ON";
+  }
+}
+
+function toggleBgmMute() {
+  isBgmMuted = !isBgmMuted;
+  const btn = document.getElementById('btnBgmMute');
+  if (isBgmMuted) {
+    btn.classList.add('muted');
+    btn.innerText = "🎵 BGM: OFF";
+    bgmAudio.pause();
+  } else {
+    btn.classList.remove('muted');
+    btn.innerText = "🎵 BGM: ON";
+    // もし現在タスクが稼働中なら、すぐにBGMを再開する
+    if (activeOperations.some(o => o.isRunning)) {
+      bgmAudio.play().catch(e => { console.warn("BGM再生ブロック:", e); });
+    }
+  }
+}
+
 
 let questData = {
   video: { title: '動画制作', emoji: '🎬', days: [0,1,2,3,4,5,6], subtasks: ['編集ソフト起動', '素材を取り込む', 'タイムラインに配置'] },
@@ -29,7 +80,7 @@ let questData = {
 };
 
 // ==========================================
-// 1. 起動・CSV読み込み・画像プリロード
+// 1. 起動・CSV読み込み・画像事前読み込み
 // ==========================================
 window.onload = async () => {
   await loadCharacterDataFromCSV();
@@ -54,8 +105,14 @@ function preloadAllImages() {
 
 function preloadCharacterImages(charId) {
   for (let i = 1; i <= 5; i++) {
+    const url = `${IMG_BASE_PATH}${charId}_${i}.png`;
+    if (imgStatus[url]) continue; 
+    
+    imgStatus[url] = 'loading';
     const img = new Image();
-    img.src = `${IMG_BASE_PATH}${charId}_${i}.png`;
+    img.onload = () => { imgStatus[url] = 'ok'; };
+    img.onerror = () => { imgStatus[url] = 'error'; }; 
+    img.src = url;
     globalImageCache.push(img);
   }
 }
@@ -92,7 +149,6 @@ function parseCSV(csvText) {
   const db = {};
   const rows = csvText.split('\n');
   
-  // 抜け漏れていた「カンマ・改行・ダブルクォート対応」の最強パーサーを復活
   for(let i = 1; i < rows.length; i++) {
     let row = rows[i].trim();
     if(!row) continue;
@@ -115,8 +171,6 @@ function parseCSV(csvText) {
     cols.push(currentStr);
     
     if(cols.length < 2) continue;
-    
-    // 不要なダブルクォーテーションを削除
     cols = cols.map(c => c.replace(/^"|"$/g, '').trim());
     
     const id = cols[0];
@@ -125,8 +179,8 @@ function parseCSV(csvText) {
       dialogues: {
         greet_morning: cols[2] || "", greet_noon: cols[3] || "", greet_night: cols[4] || "", switch: cols[5] || "",
         wait_empty: cols[6] || "", wait_ready: cols[7] || "", work_start: cols[8] || "",
-        work_cheer: cols[10] || "", subtask_clear: [cols[9], cols[11]].filter(Boolean).join('|') || "",
-        main_clear: cols[12] || "", all_clear: cols[13] || "", cancel: cols[14] || ""
+        subtask_clear: [cols[9], cols[11]].filter(Boolean).join('|') || "", 
+        work_cheer: cols[10] || "", main_clear: cols[12] || "", all_clear: cols[13] || "", cancel: cols[14] || ""
       }
     };
   }
@@ -154,11 +208,38 @@ function initApp() {
 }
 
 // ==========================================
-// 2. セリフと表情（全自動リセット＆瞬きアニメーション）
+// 2. 音声・セリフ・表情 統合制御
 // ==========================================
 let blinkTimeout1 = null;
 let blinkTimeout2 = null;
 let revertExpressionTimer = null;
+
+// 音声再生（デバッグログ追加版）
+function playVoice(charId, triggerName, variationIndex) {
+  if (isVoiceMuted) return;
+
+  try {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    }
+    const audioUrl = `${VOICE_BASE_PATH}${charId}_${triggerName}_${variationIndex}${VOICE_EXT}`;
+    
+    // 【開発者用確認】F12キーの開発者ツールで、どのファイルを読み込みに行っているか確認できます
+    console.log("🔊 ボイス再生リクエスト:", audioUrl);
+
+    currentAudio = new Audio(audioUrl);
+    const playPromise = currentAudio.play();
+    
+    if (playPromise !== undefined) {
+      playPromise.catch(e => {
+        console.warn(`🔊 再生失敗 (${audioUrl}) - ファイルが存在しないか、ブラウザにブロックされました:`, e);
+      });
+    }
+  } catch (err) {
+    console.error("音声システムエラー:", err);
+  }
+}
 
 function setExpression(state) {
   clearTimeout(blinkTimeout1); 
@@ -181,17 +262,29 @@ function setExpression(state) {
   const imgUrl = `${IMG_BASE_PATH}${currentCharId}_${state}.png`;
   const emoji = fallbackEmojis[(state - 1) % fallbackEmojis.length];
 
-  imgEl.onerror = function() {
-    this.style.display = 'none';
+  if (imgStatus[imgUrl] === 'error') {
+    imgEl.style.display = 'none';
     emojiEl.style.display = 'inline';
     emojiEl.innerText = emoji;
-  };
-  imgEl.onload = function() {
-    this.style.display = 'inline';
-    emojiEl.style.display = 'none';
-  };
-  
-  imgEl.src = imgUrl;
+  } else {
+    imgEl.onerror = function() {
+      imgStatus[imgUrl] = 'error'; 
+      this.style.display = 'none';
+      emojiEl.style.display = 'inline';
+      emojiEl.innerText = emoji;
+    };
+    imgEl.onload = function() {
+      imgStatus[imgUrl] = 'ok';
+      this.style.display = 'inline';
+      emojiEl.style.display = 'none';
+    };
+    if (!imgEl.src.endsWith(imgUrl)) {
+      imgEl.src = imgUrl;
+    } else {
+      imgEl.style.display = 'inline';
+      emojiEl.style.display = 'none';
+    }
+  }
 
   if (state === 2) {
     startBlinking();
@@ -207,37 +300,66 @@ function startBlinking() {
   blinkTimeout1 = setTimeout(() => {
     const imgEl = document.getElementById('charImg');
     const emojiEl = document.getElementById('charEmoji');
+    const url3 = `${IMG_BASE_PATH}${currentCharId}_3.png`;
     
-    if(imgEl) imgEl.src = `${IMG_BASE_PATH}${currentCharId}_3.png`;
-    if(emojiEl) emojiEl.innerText = fallbackEmojis[2];
+    if (imgStatus[url3] === 'error') {
+      if(imgEl) imgEl.style.display = 'none';
+      if(emojiEl) { emojiEl.style.display = 'inline'; emojiEl.innerText = fallbackEmojis[2]; }
+    } else {
+      if(imgEl) { imgEl.src = url3; imgEl.style.display = 'inline'; }
+      if(emojiEl) emojiEl.style.display = 'none';
+    }
     
     blinkTimeout2 = setTimeout(() => {
-      if(imgEl) imgEl.src = `${IMG_BASE_PATH}${currentCharId}_2.png`;
-      if(emojiEl) emojiEl.innerText = fallbackEmojis[1];
+      const url2 = `${IMG_BASE_PATH}${currentCharId}_2.png`;
+      if (imgStatus[url2] === 'error') {
+        if(imgEl) imgEl.style.display = 'none';
+        if(emojiEl) { emojiEl.style.display = 'inline'; emojiEl.innerText = fallbackEmojis[1]; }
+      } else {
+        if(imgEl) { imgEl.src = url2; imgEl.style.display = 'inline'; }
+        if(emojiEl) emojiEl.style.display = 'none';
+      }
       startBlinking(); 
     }, 150);
   }, blinkInterval);
 }
 
 let typeTimer;
-function typeDialogue(textTemplate, expressionState = 2) {
+function typeDialogue(textTemplate, expressionState = 2, triggerName = null) {
   if(!textTemplate) return;
   
   setExpression(expressionState);
   
   const parts = textTemplate.split('|');
-  const selectedText = parts[Math.floor(Math.random() * parts.length)];
-  const text = selectedText.replace(/{name}/g, playerName);
+  const rIdx = Math.floor(Math.random() * parts.length);
+  const text = parts[rIdx].replace(/{name}/g, playerName); 
+  
+  // 文字アニメーションより前に音声再生トリガーを呼ぶ
+  if (triggerName) {
+    playVoice(currentCharId, triggerName, rIdx);
+  }
   
   const el = document.getElementById('dialogueText');
   el.innerHTML = ''; let i = 0; clearInterval(typeTimer);
-  typeTimer = setInterval(() => { el.innerHTML += text.charAt(i); i++; if (i >= text.length) clearInterval(typeTimer); }, 50);
+  typeTimer = setInterval(() => { 
+    if(i < text.length) {
+      el.innerHTML += text.charAt(i); 
+      i++; 
+    } else {
+      clearInterval(typeTimer); 
+    }
+  }, 50);
 }
 
 function initGreeting() {
   const hour = todayDate.getHours(); const d = charDatabase[currentCharId].dialogues;
-  let text = (hour >= 5 && hour < 11) ? d.greet_morning : (hour >= 11 && hour < 18) ? d.greet_noon : d.greet_night;
-  typeDialogue(text, 1);
+  let text = ""; let trigger = "";
+  
+  if (hour >= 5 && hour < 11) { text = d.greet_morning; trigger = "greet_morning"; }
+  else if (hour >= 11 && hour < 18) { text = d.greet_noon; trigger = "greet_noon"; }
+  else { text = d.greet_night; trigger = "greet_night"; }
+  
+  typeDialogue(text, 1, trigger);
 }
 
 // ==========================================
@@ -270,7 +392,7 @@ function openCharModal() {
 function selectCharacter(id) {
   currentCharId = id; localStorage.setItem('oshi_char', id);
   document.getElementById('charModal').style.display = 'none';
-  typeDialogue(charDatabase[id].dialogues.switch, 1);
+  typeDialogue(charDatabase[id].dialogues.switch, 1, "switch");
 }
 
 function updateGoldUI() { document.getElementById('goldDisplay').innerText = `💖 ${gold}G`; localStorage.setItem('oshi_gold', gold); }
@@ -278,7 +400,7 @@ function drawGacha() {
   if (gold >= 100) {
     gold -= 100; updateGoldUI();
     alert(`ガチャを引きました！(UIモック)`);
-    typeDialogue("「わぁ、これ欲しかったんだ！ありがとう！」", 4); 
+    typeDialogue("「わぁ、これ欲しかったんだ！ありがとう！」", 4, "switch"); 
   } else { alert('Gが足りないみたい…予定をこなして集めよう！'); }
 }
 
@@ -357,10 +479,17 @@ function toggleTimer(opId) {
   const op = activeOperations.find(o => o.id === opId); if (!op || op.isCompleted) return;
   if (op.isRunning) { op.isRunning = false; clearInterval(op.intervalId); }
   else { op.isRunning = true; op.intervalId = setInterval(() => { op.time++; const timerEl = document.getElementById(`timer-${op.id}`); if(timerEl) timerEl.innerText = formatTime(op.time); }, 1000); }
-  updateCharacterAnimation(); renderDungeonTasks();
+  
+  if (op.isRunning) {
+    typeDialogue(charDatabase[currentCharId].dialogues.work_start, 5, "work_start");
+  } else {
+    typeDialogue(charDatabase[currentCharId].dialogues.wait_ready, 2, "wait_ready");
+  }
+  
+  updateCharacterAnimation(true); 
+  renderDungeonTasks();
 }
 
-// 抜け漏れていた「大タスク完了」と「全タスク完了」の優先順位バグを完璧に修正
 function toggleSubtask(opId, subIdx) {
   const op = activeOperations.find(o => o.id === opId); if (!op) return;
   op.subtasks[subIdx].completed = !op.subtasks[subIdx].completed;
@@ -378,23 +507,19 @@ function toggleSubtask(opId, subIdx) {
     op.isCompleted = false;
   }
 
-  // 今この瞬間に「全てのタスクが完了」したかどうかを判定
   const isAllCompletedNow = activeOperations.length > 0 && activeOperations.every(o => o.isCompleted);
 
   if (isAllCompletedNow) {
-    // 全タスク完了！（大タスク完了のセリフは飛ばして、全完了セリフだけを喋らせる）
     updateCharacterAnimation(false); 
   } else if (isMainJustCompleted) {
-    // 大タスク（1つ）のみ完了
-    typeDialogue(dialogs.main_clear, 5); 
-    updateCharacterAnimation(true); // 余計なセリフ上書きを防ぐ
+    typeDialogue(dialogs.main_clear, 5, "main_clear"); 
+    updateCharacterAnimation(true); 
   } else {
-    // 小タスクのON/OFF
     if (op.subtasks[subIdx].completed) {
       if (navigator.vibrate) navigator.vibrate(30);
-      typeDialogue(dialogs.subtask_clear, 1);
+      typeDialogue(dialogs.subtask_clear, 1, "subtask_clear");
     } else {
-      typeDialogue(dialogs.cancel, 2);
+      typeDialogue(dialogs.cancel, 2, "cancel");
     }
     updateCharacterAnimation(true);
   }
@@ -421,11 +546,17 @@ function updateCharacterAnimation(skipDialogue = false) {
   const isAllCompleted = activeOperations.length > 0 && activeOperations.every(o => o.isCompleted);
   const charArea = document.getElementById('charArea');
   const dialogs = charDatabase[currentCharId].dialogues;
+  
+  // BGMの自動再生・停止制御
+  if (isAnyRunning && !isAllCompleted && !isBgmMuted) {
+    bgmAudio.play().catch(e => { console.warn("BGM再生ブロック:", e); });
+  } else {
+    bgmAudio.pause(); 
+  }
 
   if (isAllCompleted) {
     charArea.classList.remove('working');
     
-    // 全クリボーナス (1日1回)
     if (localStorage.getItem('oshi_last_clear') !== todayStr) {
       localStorage.setItem('oshi_last_clear', todayStr);
       gold += 50; updateGoldUI();
@@ -436,13 +567,13 @@ function updateCharacterAnimation(skipDialogue = false) {
     }
 
     if (!skipDialogue) {
-      typeDialogue(dialogs.all_clear, 5); 
+      typeDialogue(dialogs.all_clear, 5, "all_clear"); 
     }
   } else if (isAnyRunning) {
     charArea.classList.add('working');
-    if(!skipDialogue) typeDialogue(dialogs.work_cheer, 4); 
+    if(!skipDialogue) typeDialogue(dialogs.work_cheer, 4, "work_cheer"); 
   } else {
     charArea.classList.remove('working');
-    if(!skipDialogue) typeDialogue(dialogs.wait_ready, 2); 
+    if(!skipDialogue) typeDialogue(dialogs.wait_ready, 2, "wait_ready"); 
   }
 }
