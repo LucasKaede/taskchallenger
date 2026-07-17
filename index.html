@@ -1,258 +1,285 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Oshi Task - BGM & Voice Control</title>
-<style>
-  :root { --bg-base: #fff0f5; --panel-bg: #ffffff; --accent: #ff69b4; --accent-glow: rgba(255, 105, 180, 0.4); --success: #ff1493; --cancel: #ccc; --text-main: #555555; --text-sub: #888888; --ui-border: #ffb6c1; --paper-bg: #fff; --paper-text: #444; }
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-  body { font-family: 'Hiragino Maru Gothic ProN', 'Rounded M+ 1c', sans-serif; background-color: var(--bg-base); color: var(--text-main); height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Web 2.5D Avatar - Ultimate</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 20px; }
+        
+        #character-container { flex-grow: 1; display: flex; align-items: center; justify-content: center; width: 100%; max-width: 500px; position: relative; z-index: 10; }
+        
+        /* なめらかな動きを作るためのトランジション（AIの微細なブレを吸収） */
+        svg#character { width: 100%; height: auto; filter: drop-shadow(0 20px 30px rgba(0,0,0,0.15)); overflow: visible; }
+        .layer { transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1); }
+        .part { transition: all 0.08s cubic-bezier(0.25, 1, 0.5, 1); }
 
-  /* --- ヘッダー --- */
-  .header { flex-shrink: 0; height: 55px; background: linear-gradient(135deg, #ffb6c1 0%, #ff69b4 100%); display: flex; justify-content: space-between; align-items: center; padding: 0 15px; border-bottom: 2px solid #ff1493; z-index: 20; color: #fff; }
-  .header-left { display: flex; align-items: center; gap: 10px; font-size: 1em; font-weight: bold; }
-  .header-left span { background: rgba(255,255,255,0.3); padding: 4px 12px; border-radius: 20px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
-  .header-right { display: flex; align-items: center; gap: 8px; }
-  .gold-badge { font-weight: bold; background: #fff; color: var(--accent); padding: 4px 12px; border-radius: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-
-  /* --- メインコンテンツ --- */
-  .main-content { flex-grow: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-  .tab-pane { display: none; height: 100%; flex-direction: column; position: relative; }
-  .tab-pane.active { display: flex; }
-
-  /* === 1. デートタブ === */
-  .progress-track-container { position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(255,255,255,0.85); border-radius: 20px; border: 2px solid var(--ui-border); height: 35px; display: flex; align-items: center; padding: 0 20px; overflow-x: auto; z-index: 10; }
-  .progress-track-container::-webkit-scrollbar { display: none; }
-  .prog-line { height: 4px; background: #ffe4e1; min-width: 25px; flex-grow: 1; transition: 0.5s; }
-  .prog-line.completed { background: var(--success); box-shadow: 0 0 5px var(--accent-glow); }
-  .prog-node { border-radius: 50%; background: #fff; border: 2px solid #ffb6c1; position: relative; flex-shrink: 0; transition: 0.5s; }
-  .prog-node.small { width: 12px; height: 12px; } .prog-node.big { width: 18px; height: 18px; border-width: 3px; }
-  .prog-node.completed { background: var(--success); border-color: var(--success); }
-  
-  .character-area { flex: 0 0 45%; background: linear-gradient(135deg, #ffe4e1 0%, #fff0f5 100%); position: relative; display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--ui-border); transition: 0.5s; padding-top: 20px; }
-  .character-area.working { background: linear-gradient(135deg, #ffb6c1 0%, #ffe4e1 100%); }
-  
-  /* 右上のボタン群（推し変更＋音声ミュート） */
-  .right-controls { position: absolute; top: 55px; right: 15px; display: flex; flex-direction: column; gap: 8px; z-index: 5; align-items: flex-end; }
-  .btn-char-change { background: #fff; border: 2px solid var(--ui-border); border-radius: 20px; padding: 5px 12px; font-size: 0.85em; font-weight: bold; color: var(--accent); cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-  .btn-mute { background: #fff; border: 2px solid #ddd; border-radius: 20px; padding: 4px 10px; font-size: 0.75em; font-weight: bold; color: var(--text-sub); cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: 0.2s; width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; }
-  .btn-mute.muted { background: #eee; color: #aaa; text-decoration: line-through; border-color: #eee; }
-  
-  .character-sprite-container { width: 160px; height: 160px; display: flex; justify-content: center; align-items: center; font-size: 6em; filter: drop-shadow(0 5px 10px rgba(255,105,180,0.3)); animation: floatAnimIdle 3s infinite alternate ease-in-out; }
-  .working .character-sprite-container { animation: floatAnimWork 1s infinite alternate ease-in-out; }
-  @keyframes floatAnimIdle { 0% { transform: translateY(0); } 100% { transform: translateY(-8px); } }
-  @keyframes floatAnimWork { 0% { transform: translateY(0) scale(1); } 100% { transform: translateY(-15px) scale(1.02); } }
-
-  .dialogue-box { position: absolute; bottom: 15px; left: 15px; right: 15px; background: #fff; border: 2px solid var(--accent); padding: 15px; border-radius: 15px; font-size: 0.9em; font-weight: bold; color: var(--text-main); box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 5; min-height: 50px; }
-  .dialogue-box::before { content: ''; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); border-width: 0 10px 12px 10px; border-style: solid; border-color: transparent transparent var(--accent) transparent; }
-  .dialogue-box::after { content: ''; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); border-width: 0 8px 10px 8px; border-style: solid; border-color: transparent transparent #fff transparent; }
-
-  /* タスクエリア等 省略せずそのまま */
-  .task-area { flex: 1; overflow-y: auto; padding: 15px; background: var(--bg-base); }
-  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--text-sub); }
-  .mq-card { background: var(--panel-bg); margin-bottom: 15px; border-radius: 12px; border: 2px solid var(--ui-border); box-shadow: 0 4px 8px rgba(255,105,180,0.1); transition: 0.5s; }
-  .mq-card.completed { opacity: 0.6; filter: grayscale(0.5); border-color: var(--cancel); }
-  .mq-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 2px dashed var(--ui-border); background: #fffaf0; border-radius: 10px 10px 0 0; }
-  .mq-title { font-weight: bold; font-size: 1.05em; color: var(--accent); } .completed .mq-title { color: var(--cancel); text-decoration: line-through; }
-  .mq-controls { display: flex; align-items: center; gap: 10px; }
-  .mq-timer { font-family: monospace; font-size: 1.1em; color: var(--accent); font-weight: bold; width: 50px; text-align: right; background: #fff0f5; padding: 2px 6px; border-radius: 8px; }
-  .btn-action { border: none; padding: 6px 12px; border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-  .btn-start-quest { background: var(--accent); color: #fff; } .btn-stop-quest { background: #fff; color: var(--accent); border: 2px solid var(--accent); } .btn-completed-quest { background: #eee; color: #aaa; pointer-events: none; }
-  .mq-subtasks { list-style: none; padding: 5px 15px 10px 15px; }
-  .subtask-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #ffe4e1; cursor: pointer; transition: 0.3s; } .subtask-item:last-child { border-bottom: none; }
-  .subtask-title-wrap { position: relative; flex-grow: 1; }
-  .subtask-title { font-size: 0.95em; position: relative; display: inline-block; transition: color 0.5s; } .subtask-title::after { content: ''; position: absolute; left: 0; top: 50%; width: 0; height: 2px; background-color: var(--accent); transition: width 0.5s cubic-bezier(0.25, 0.1, 0.25, 1); }
-  .subtask-item.completed .subtask-title { color: var(--cancel); } .subtask-item.completed .subtask-title::after { width: 100%; background-color: var(--cancel); }
-  .checkbox { font-size: 1.4em; color: #ccc; transition: 0.2s; line-height: 1; } .subtask-item.completed .checkbox { color: var(--accent); transform: scale(1.1); }
-
-  /* ボードタブ */
-  .board-header { background: #fff; color: var(--accent); text-align: center; padding: 12px; font-weight: bold; border-bottom: 2px solid var(--ui-border); box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-  .corkboard { background-color: #fffaf0; background-image: radial-gradient(#ffe4e1 15%, transparent 16%), radial-gradient(#ffe4e1 15%, transparent 16%); background-size: 20px 20px; background-position: 0 0, 10px 10px; flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-content: flex-start; padding-bottom: 220px; }
-  .quest-paper { background: #fff; color: var(--paper-text); width: 45%; padding: 20px 10px 15px 10px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); position: relative; text-align: center; font-weight: bold; touch-action: none; font-size: 0.9em; border: 2px solid var(--ui-border); }
-  .quest-paper::before { content: '🎀'; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 1.5em; }
-  .quest-paper:nth-child(even) { transform: rotate(2deg); } .quest-paper:nth-child(odd) { transform: rotate(-2deg); }
-  .quest-emoji { font-size: 1.2em; display: block; margin-top: 5px; }
-  .dragging-clone { position: fixed; z-index: 9999; pointer-events: none; transform: scale(1.05) rotate(0deg); opacity: 0.9; box-shadow: 0 10px 20px rgba(255,105,180,0.3); }
-
-  .inbox-drawer { position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(255,255,255,0.95); border-top: 3px solid var(--accent); height: 200px; transform: translateY(100%); transition: transform 0.3s; display: flex; flex-direction: column; padding: 15px; z-index: 10; box-shadow: 0 -5px 20px rgba(255,105,180,0.2); backdrop-filter: blur(5px); }
-  .inbox-drawer.open { transform: translateY(0); }
-  .inbox-header { color: var(--accent); font-weight: bold; margin-bottom: 10px; text-align: center; font-size: 0.95em; }
-  .inbox-items { flex-grow: 1; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; align-items: center; }
-  .inbox-chip { background: #fff0f5; padding: 8px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold; display: flex; align-items: center; gap: 6px; border: 1px solid var(--ui-border); white-space: nowrap; }
-  .move-btn { color: #ffb6c1; font-size: 1.2em; cursor: pointer; padding: 0 2px; } .del-btn { color: var(--cancel); font-size: 1.2em; cursor: pointer; padding-left: 4px; }
-  .btn-start { background: var(--accent); color: #fff; border: none; padding: 15px; border-radius: 30px; font-weight: bold; font-size: 1.1em; width: 100%; cursor: pointer; box-shadow: 0 4px 10px var(--accent-glow); }
-
-  /* 作成タブ */
-  .issue-area { flex: 1; overflow-y: auto; padding: 20px; background: #fffaf0; }
-  .form-section { background: #fff; padding: 20px; border-radius: 15px; border: 2px solid var(--ui-border); margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-  .form-title { font-size: 1.1em; color: var(--accent); margin-bottom: 15px; border-bottom: 2px dashed var(--ui-border); padding-bottom: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-  .btn-new-create { background: #fff0f5; color: var(--accent); border: 1px solid var(--accent); padding: 4px 10px; border-radius: 15px; font-size: 0.8em; cursor: pointer; }
-  .input-group { margin-bottom: 15px; } .input-group label { display: block; font-size: 0.85em; color: var(--text-sub); margin-bottom: 5px; font-weight: bold; }
-  .title-emoji-row { display: flex; gap: 10px; } .input-text { flex-grow: 1; padding: 12px; background: #fff; border: 2px solid #eee; border-radius: 8px; font-family: inherit; }
-  .input-emoji { width: 60px; text-align: center; font-size: 1.2em; padding: 10px; background: #fff; border: 2px solid #eee; border-radius: 8px; }
-  .day-selector { display: flex; flex-wrap: wrap; gap: 8px; } .day-chip { display: flex; align-items: center; cursor: pointer; } .day-chip input { display: none; }
-  .day-chip span { background: #fff; border: 2px solid #eee; color: var(--text-sub); padding: 8px 12px; border-radius: 20px; font-size: 0.85em; transition: 0.2s; font-weight: bold; }
-  .day-chip input:checked + span { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 5px var(--accent-glow); }
-  .subtask-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; } .subtask-row { display: flex; gap: 5px; align-items: center; }
-  .btn-icon { background: #f5f5f5; color: var(--text-sub); border: none; padding: 10px; border-radius: 8px; cursor: pointer; } .btn-icon.del { color: var(--success); }
-  .btn-add-sub { background: #fff0f5; border: 2px dashed var(--accent); color: var(--accent); padding: 12px; width: 100%; border-radius: 8px; cursor: pointer; margin-bottom: 15px; font-weight: bold; }
-  .btn-submit { background: var(--accent); color: #fff; font-weight: bold; padding: 15px; width: 100%; border: none; border-radius: 30px; font-family: inherit; cursor: pointer; box-shadow: 0 4px 10px var(--accent-glow); }
-  .edit-list { display: flex; flex-direction: column; gap: 10px; } .edit-item { background: #fff; border: 2px solid #eee; padding: 12px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; } .edit-actions button { background: #fff0f5; border: 1px solid var(--ui-border); color: var(--accent); padding: 5px 12px; border-radius: 15px; margin-left: 5px; cursor: pointer; font-size: 0.8em; font-weight: bold; }
-
-  /* ショップタブ */
-  .shop-area { flex: 1; padding: 20px; background: #fffaf0; text-align: center; }
-  .gacha-box { background: #fff; padding: 30px 20px; border-radius: 20px; border: 3px solid var(--accent); box-shadow: 0 10px 20px rgba(255,105,180,0.1); margin-top: 20px; }
-  .gacha-box h2 { color: var(--accent); margin-bottom: 10px; }
-  .btn-gacha { background: linear-gradient(135deg, #ff69b4, #ff1493); color: #fff; font-size: 1.1em; font-weight: bold; padding: 15px; border: none; border-radius: 30px; box-shadow: 0 5px 15px var(--accent-glow); cursor: pointer; margin-top: 20px; width: 100%; }
-
-  /* カレンダータブ */
-  .calendar-area { flex: 1; padding: 20px; background: #fffaf0; overflow-y: auto; text-align: center; }
-  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 20px; }
-  .cal-header { font-weight: bold; color: var(--accent); padding: 5px 0; border-bottom: 2px solid var(--ui-border); }
-  .cal-day { background: #fff; border: 2px solid #eee; border-radius: 8px; aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-weight: bold; color: var(--text-main); position: relative; }
-  .cal-day.today { border-color: var(--accent); background: #fff0f5; }
-  .cal-stamp { position: absolute; font-size: 1.8em; color: var(--success); opacity: 0.8; transform: rotate(-10deg); }
-
-  /* モーダル */
-  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(2px); }
-  .modal-content { background: #fff; width: 85%; max-width: 400px; padding: 25px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 3px solid var(--ui-border); text-align: center; }
-  .modal-title { font-size: 1.2em; font-weight: bold; color: var(--accent); margin-bottom: 15px; line-height: 1.4; }
-  .input-modal { width: 100%; padding: 12px; border: 2px solid #eee; border-radius: 8px; font-size: 1.1em; margin-bottom: 15px; font-family: inherit; }
-  .btn-modal { background: var(--accent); color: #fff; border: none; padding: 12px 20px; border-radius: 20px; font-weight: bold; width: 100%; cursor: pointer; }
-  .char-modal-content { max-height: 80%; display: flex; flex-direction: column; overflow: hidden; }
-  .char-list { overflow-y: auto; padding: 10px 0; flex-grow: 1; text-align: left; }
-  .char-item { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #ffe4e1; cursor: pointer; } .char-item-icon { font-size: 2em; margin-right: 15px; } .char-item-name { font-weight: bold; color: var(--accent); }
-
-  /* 下部ナビ */
-  .bottom-nav { flex-shrink: 0; background: #fff; border-top: 2px solid var(--ui-border); display: flex; justify-content: space-around; align-items: center; padding: 10px 0 calc(15px + env(safe-area-inset-bottom)) 0; z-index: 20; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
-  .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--cancel); font-size: 0.7em; gap: 4px; flex: 1; cursor: pointer; font-weight: bold; }
-  .nav-item.active { color: var(--accent); } .nav-icon { font-size: 1.5em; transition: 0.2s; }
-  .nav-item.active .nav-icon { transform: translateY(-3px); filter: drop-shadow(0 2px 2px var(--accent-glow)); }
-  
-  #loadingScreen { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-base); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--accent); font-weight: bold; }
-</style>
+        #controls { position: absolute; bottom: 30px; width: 100%; max-width: 400px; text-align: center; z-index: 999; }
+        .btn { display: inline-block; width: 90%; padding: 18px; background: rgba(255, 255, 255, 0.9); color: #4f46e5; border: none; border-radius: 50px; font-size: 1.2rem; font-weight: 900; box-shadow: 0 10px 20px rgba(0,0,0,0.1); cursor: pointer; backdrop-filter: blur(5px); }
+        .btn:active { transform: scale(0.95); box-shadow: 0 5px 10px rgba(0,0,0,0.1); }
+        #status { margin-top: 12px; font-size: 0.95rem; color: #fff; font-weight: bold; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        
+        #webcam { position: absolute; top: 20px; right: 20px; width: 90px; height: 120px; border-radius: 12px; object-fit: cover; border: 3px solid rgba(255,255,255,0.8); box-shadow: 0 8px 16px rgba(0,0,0,0.2); transform: scaleX(-1); z-index: 5; display: none; }
+        #debug-log { display: none; } /* 本番用なのでログは非表示 */
+    </style>
+    
+    <!-- 安定のモジュールレス読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
-<div id="loadingScreen">
-  <div style="font-size: 3em; margin-bottom: 20px; animation: floatAnimWork 1s infinite alternate;">💕</div>
-  <p>キャラデータを読み込み中...</p>
-</div>
+    <video id="webcam" autoplay playsinline muted></video>
 
-<div class="modal-overlay" id="loginModal" style="display:none;">
-  <div class="modal-content">
-    <div class="modal-title">ようこそ！<br>あなたのお名前を教えてね💕</div>
-    <input type="text" id="playerNameInput" class="input-modal" placeholder="例：ゲスト">
-    <button class="btn-modal" onclick="doLogin()">はじめる</button>
-  </div>
-</div>
+    <!-- キャラクターエリア -->
+    <div id="character-container">
+        <!-- viewBoxを-200 -200にすることで、顔の中心が常にX:0, Y:0になり、3D回転の計算が完璧になります -->
+        <svg id="character" viewBox="-200 -200 400 400">
+            <defs>
+                <linearGradient id="skinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#FFF0E5" />
+                    <stop offset="100%" stop-color="#FFD6C2" />
+                </linearGradient>
+                <linearGradient id="hairGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#4A3B42" />
+                    <stop offset="100%" stop-color="#2D2329" />
+                </linearGradient>
+                <!-- ほっぺのぼかし -->
+                <radialGradient id="blush" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="#FF8A8A" stop-opacity="0.7"/>
+                    <stop offset="100%" stop-color="#FF8A8A" stop-opacity="0"/>
+                </radialGradient>
+            </defs>
 
-<div class="header">
-  <div class="header-left"><span id="playerNameDisplay">ゲスト</span></div>
-  <div class="header-right"><div class="gold-badge" id="goldDisplay">💖 0G</div></div>
-</div>
+            <!-- 【グループ全体】首の傾き（Roll）をここに適用 -->
+            <g id="head-group" class="layer">
+                
+                <!-- 【奥のレイヤー】後ろ髪（顔と逆方向に少し動く） -->
+                <g id="layer-back" class="layer">
+                    <circle cx="0" cy="20" r="140" fill="url(#hairGrad)" />
+                    <!-- 耳 -->
+                    <circle cx="-135" cy="15" r="25" fill="#FFD6C2" stroke="#DCA37A" stroke-width="3" />
+                    <circle cx="135" cy="15" r="25" fill="#FFD6C2" stroke="#DCA37A" stroke-width="3" />
+                </g>
 
-<div class="main-content">
-  <!-- デートタブ -->
-  <div id="tab-home" class="tab-pane active">
-    <div class="progress-track-container" id="progressTrack" style="display: none;"></div>
-    <div class="character-area" id="charArea">
-      
-      <!-- 【新規】右上のコントロール群 -->
-      <div class="right-controls">
-        <button class="btn-char-change" onclick="openCharModal()">🔄 推し変更</button>
-        <button id="btnVoiceMute" class="btn-mute" onclick="toggleVoiceMute()">🗣️ ボイス: ON</button>
-        <button id="btnBgmMute" class="btn-mute" onclick="toggleBgmMute()">🎵 BGM: ON</button>
-      </div>
+                <!-- 【中間のレイヤー】顔のベース（中心点） -->
+                <g id="layer-mid" class="layer">
+                    <!-- 輪郭 -->
+                    <path d="M -130 -20 C -130 90, -70 150, 0 155 C 70 150, 130 90, 130 -20 Z" fill="url(#skinGrad)" />
+                    <!-- ほっぺ -->
+                    <circle cx="-75" cy="45" r="25" fill="url(#blush)" />
+                    <circle cx="75" cy="45" r="25" fill="url(#blush)" />
+                </g>
 
-      <div class="character-sprite-container" id="charSpriteContainer"></div>
-      <div class="dialogue-box" id="dialogueText"></div>
+                <!-- 【手前のレイヤー】顔のパーツ（顔の向きに合わせて大きく動く） -->
+                <g id="layer-front" class="layer">
+                    <!-- 眉毛 -->
+                    <path id="brow-L" class="part" d="M -90 -55 Q -60 -70 -30 -55" fill="none" stroke="#2D2329" stroke-width="8" stroke-linecap="round" />
+                    <path id="brow-R" class="part" d="M 30 -55 Q 60 -70 90 -55" fill="none" stroke="#2D2329" stroke-width="8" stroke-linecap="round" />
+
+                    <!-- 左目 -->
+                    <g id="eye-L-group" class="part">
+                        <ellipse cx="-60" cy="-15" rx="25" ry="30" fill="#FFF" />
+                        <ellipse id="pupil-L" class="part" cx="-60" cy="-15" rx="14" ry="18" fill="#5E35B1" />
+                        <circle id="high-L" class="part" cx="-65" cy="-22" r="6" fill="#FFF" />
+                        <!-- まぶた（まばたきで上から降りてくる） -->
+                        <path id="eyelid-L" class="part" d="M -95 -15 Q -60 -60 -25 -15 Z" fill="#FFD6C2" />
+                        <path class="part" d="M -90 -20 Q -60 -50 -30 -20" fill="none" stroke="#2D2329" stroke-width="4" stroke-linecap="round"/>
+                    </g>
+
+                    <!-- 右目 -->
+                    <g id="eye-R-group" class="part">
+                        <ellipse cx="60" cy="-15" rx="25" ry="30" fill="#FFF" />
+                        <ellipse id="pupil-R" class="part" cx="60" cy="-15" rx="14" ry="18" fill="#5E35B1" />
+                        <circle id="high-R" class="part" cx="55" cy="-22" r="6" fill="#FFF" />
+                        <!-- まぶた -->
+                        <path id="eyelid-R" class="part" d="M 25 -15 Q 60 -60 95 -15 Z" fill="#FFD6C2" />
+                        <path class="part" d="M 30 -20 Q 60 -50 90 -20" fill="none" stroke="#2D2329" stroke-width="4" stroke-linecap="round"/>
+                    </g>
+
+                    <!-- 鼻（少し高さを出す） -->
+                    <path id="nose" class="part" d="M 0 35 L -6 45 L 6 45 Z" fill="#DCA37A" />
+
+                    <!-- 口（笑顔と開閉を精密に制御） -->
+                    <path id="mouth" class="part" d="M -25 75 Q 0 80 25 75 Q 0 90 -25 75 Z" fill="#D81B60" stroke="#880E4F" stroke-width="3" stroke-linejoin="round" />
+                </g>
+
+                <!-- 【最前面のレイヤー】前髪（最も大きく動き、立体感を強調する） -->
+                <g id="layer-top" class="layer">
+                    <path d="M -140 -20 C -140 -150, 140 -150, 140 -20 C 110 -60, 80 -10, 40 -60 C 0 -10, -30 -70, -70 -20 C -100 -60, -120 -10, -140 -20 Z" fill="url(#hairGrad)" />
+                    <!-- 触角ヘア -->
+                    <path d="M -120 -20 Q -150 50 -130 100 Q -110 40 -90 -20 Z" fill="url(#hairGrad)" />
+                    <path d="M 120 -20 Q 150 50 130 100 Q 110 40 90 -20 Z" fill="url(#hairGrad)" />
+                </g>
+            </g>
+        </svg>
     </div>
-    <div class="task-area">
-      <div class="empty-state" id="emptyState">
-        <p>今日は予定が入ってないみたい</p>
-        <button class="btn-start" style="margin-top:20px; width:80%;" onclick="switchTab('tab-quest', document.getElementById('nav-quest'))">予定を立てる 🗓️</button>
-      </div>
-      <div id="activeTaskView" style="display: none;"><div id="taskList"></div></div>
+
+    <div id="controls">
+        <button id="start-btn" class="btn">🚀 AI システム起動</button>
+        <p id="status">システムスタンバイ完了</p>
     </div>
-  </div>
 
-  <!-- 今日の予定タブ (ボード) -->
-  <div id="tab-quest" class="tab-pane">
-    <div class="board-header" id="boardHeader">📅 今日の予定</div>
-    <div class="corkboard" id="corkboard"></div>
-    <div class="inbox-drawer" id="inboxDrawer">
-      <div class="inbox-header">📥 予定リスト (ドラッグで追加)</div>
-      <div class="inbox-items" id="inboxItems"></div>
-      <button class="btn-start" onclick="startOperations()">予定を開始する 💖</button>
-    </div>
-  </div>
+    <script>
+        window.onload = () => {
+            const startBtn = document.getElementById("start-btn");
+            const statusText = document.getElementById("status");
+            const videoElement = document.getElementById("webcam");
+            
+            // SVGレイヤー
+            const headGroup = document.getElementById("head-group");
+            const layerBack = document.getElementById("layer-back");
+            const layerMid = document.getElementById("layer-mid");
+            const layerFront = document.getElementById("layer-front");
+            const layerTop = document.getElementById("layer-top");
+            
+            // 顔パーツ
+            const eyelidL = document.getElementById("eyelid-L");
+            const eyelidR = document.getElementById("eyelid-R");
+            const pupilL = document.getElementById("pupil-L");
+            const pupilR = document.getElementById("pupil-R");
+            const highL = document.getElementById("high-L");
+            const highR = document.getElementById("high-R");
+            const browL = document.getElementById("brow-L");
+            const browR = document.getElementById("brow-R");
+            const mouth = document.getElementById("mouth");
+            const nose = document.getElementById("nose");
 
-  <!-- 作成タブ (発行) -->
-  <div id="tab-issue" class="tab-pane">
-    <div class="issue-area">
-      <div class="form-section">
-        <div class="form-title">
-          <span id="formHeader">📝 予定を新しく作る</span>
-          <button id="cancelEditBtn" class="btn-new-create" style="display:none;" onclick="cancelEdit()">+ 新規作成</button>
-        </div>
-        <input type="hidden" id="editQuestId" value="">
-        <div class="input-group">
-          <label>予定名と アイコン</label>
-          <div class="title-emoji-row"><input type="text" id="questTitleInput" class="input-text" placeholder="例：お買い物"><input type="text" id="questEmojiInput" class="input-emoji" maxlength="2" placeholder="🛍️"></div>
-        </div>
-        <div class="input-group">
-          <label>予定を入れる曜日</label>
-          <div class="day-selector" id="daySelectors">
-            <label class="day-chip"><input type="checkbox" value="1"><span>月</span></label><label class="day-chip"><input type="checkbox" value="2"><span>火</span></label><label class="day-chip"><input type="checkbox" value="3"><span>水</span></label><label class="day-chip"><input type="checkbox" value="4"><span>木</span></label><label class="day-chip"><input type="checkbox" value="5"><span>金</span></label><label class="day-chip"><input type="checkbox" value="6"><span>土</span></label><label class="day-chip"><input type="checkbox" value="0"><span>日</span></label>
-          </div>
-        </div>
-        <div class="input-group">
-          <label>やることリスト（▲▼で入れ替え）</label>
-          <div class="subtask-list" id="subtaskInputsArea"></div>
-          <button class="btn-add-sub" onclick="addSubtaskField()">+ リストを追加</button>
-        </div>
-        <button class="btn-submit" onclick="saveQuest()">予定表に保存する 💌</button>
-      </div>
-      <div class="form-section"><div class="form-title">📋 登録した予定の管理</div><div class="edit-list" id="editListArea"></div></div>
-    </div>
-  </div>
+            let camera;
 
-  <!-- ショップタブ -->
-  <div id="tab-shop" class="tab-pane">
-    <div class="shop-area">
-      <div class="gacha-box">
-        <h2>✨ ガチャ ✨</h2>
-        <p>1回 100G で推しの衣装をゲット！</p>
-        <button class="btn-gacha" onclick="drawGacha()">100G でガチャを引く 🎁</button>
-      </div>
-    </div>
-  </div>
+            startBtn.addEventListener("click", async () => {
+                startBtn.disabled = true;
+                startBtn.textContent = "⏳ 魔法陣を展開中...";
+                statusText.textContent = "AIモデルの準備をしています...";
 
-  <!-- カレンダータブ -->
-  <div id="tab-calendar" class="tab-pane">
-    <div class="board-header">📅 カレンダー記録</div>
-    <div class="calendar-area">
-      <h3 id="calMonthDisplay" style="color:var(--accent);">2026年 7月</h3>
-      <p style="font-size:0.8em; color:#888;">全ての予定を終わらせた日にスタンプがつくよ！</p>
-      <div class="calendar-grid" id="calendarGrid"></div>
-    </div>
-  </div>
-</div>
+                try {
+                    const faceMesh = new FaceMesh({locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                    }});
+                    
+                    faceMesh.setOptions({
+                        maxNumFaces: 1,
+                        refineLandmarks: true, // 目の瞳孔（虹彩）のトラッキングを有効化
+                        minDetectionConfidence: 0.6,
+                        minTrackingConfidence: 0.6
+                    });
+                    
+                    faceMesh.onResults(onResults);
 
-<!-- モーダル群 -->
-<div class="modal-overlay" id="questModal" style="display:none;"><div class="modal-content"><div class="modal-title" id="modalTitle"></div><ul class="modal-list" id="modalList" style="text-align:left;"></ul><button class="btn-modal" style="background:#eee; color:#444;" onclick="closeModal()">閉じる</button></div></div>
-<div class="modal-overlay" id="charModal" style="display:none;"><div class="modal-content char-modal-content"><div class="modal-title">推しを選択してね</div><div class="char-list" id="charListArea"></div><button class="btn-modal" style="background:#eee; color:#444; margin-top:10px;" onclick="document.getElementById('charModal').style.display='none'">閉じる</button></div></div>
+                    camera = new Camera(videoElement, {
+                        onFrame: async () => {
+                            await faceMesh.send({image: videoElement});
+                        },
+                        width: 480, height: 640
+                    });
+                    
+                    await camera.start();
+                    videoElement.style.display = "block";
+                    startBtn.style.display = "none";
+                    statusText.textContent = "✨ カメラに顔を向けてください ✨";
 
-<div class="bottom-nav">
-  <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home', this)"><div class="nav-icon">💕</div><span>デート</span></div>
-  <div class="nav-item" id="nav-quest" onclick="switchTab('tab-quest', this)"><div class="nav-icon">📌</div><span>今日の予定</span></div>
-  <div class="nav-item" id="nav-issue" onclick="switchTab('tab-issue', this)"><div class="nav-icon">📝</div><span>作成</span></div>
-  <div class="nav-item" id="nav-shop" onclick="switchTab('tab-shop', this)"><div class="nav-icon">🛍️</div><span>ショップ</span></div>
-  <div class="nav-item" id="nav-cal" onclick="switchTab('tab-calendar', this)"><div class="nav-icon">📅</div><span>カレンダー</span></div>
-</div>
+                } catch (error) {
+                    statusText.textContent = "起動エラー：カメラの許可が必要です";
+                    startBtn.disabled = false;
+                    startBtn.textContent = "再試行する";
+                }
+            });
 
-<script src="app.js"></script>
+            // 距離を計算する便利関数
+            function getDist(p1, p2) {
+                return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+            }
+
+            function onResults(results) {
+                if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                    const lms = results.multiFaceLandmarks[0];
+                    
+                    // --- 1. 顔の角度（3Dパララックス用） ---
+                    // 首の傾き (Roll)
+                    const dx = lms[263].x - lms[33].x;
+                    const dy = lms[263].y - lms[33].y;
+                    const roll = -Math.atan2(dy, dx) * (180 / Math.PI);
+
+                    // 顔の左右上下の向き (Yaw, Pitch)
+                    const faceW = getDist(lms[234], lms[454]);
+                    const faceH = getDist(lms[10], lms[152]);
+                    const midX = (lms[234].x + lms[454].x) / 2;
+                    const midY = (lms[10].y + lms[152].y) / 2;
+                    
+                    // 中央から鼻がどれくらいズレているかで算出 (-1.0 ～ 1.0)
+                    const yaw = (lms[4].x - midX) / faceW;
+                    const pitch = (lms[4].y - midY) / faceH - 0.1;
+
+                    // 顔全体を傾ける
+                    headGroup.style.transform = `rotate(${roll}deg)`;
+
+                    // 【パララックス(視差)効果】レイヤーごとに移動量を変えて立体感を出す！
+                    // 奥に行くほど逆に動き、手前に来るほど大きく動く
+                    layerBack.style.transform = `translate(${yaw * -15}px, ${pitch * -15}px)`;
+                    layerMid.style.transform = `translate(${yaw * 10}px, ${pitch * 10}px)`;
+                    layerFront.style.transform = `translate(${yaw * 35}px, ${pitch * 35}px)`;
+                    layerTop.style.transform = `translate(${yaw * 50}px, ${pitch * 50}px)`;
+
+
+                    // --- 2. 目の開閉（まぶたの制御） ---
+                    const eyeOpenL = getDist(lms[159], lms[145]) / getDist(lms[33], lms[133]);
+                    const eyeOpenR = getDist(lms[386], lms[374]) / getDist(lms[263], lms[362]);
+                    
+                    // まばたきの閾値計算 (0で完全閉じ、1で開き)
+                    const blinkL = Math.max(0, Math.min(1, (eyeOpenL - 0.15) * 5));
+                    const blinkR = Math.max(0, Math.min(1, (eyeOpenR - 0.15) * 5));
+
+                    // まぶたのパスを動的に変形（Y座標を下げて目を隠す）
+                    const lidLY = -15 + (1 - blinkL) * 30; // 閉じるとYがプラスに下がる
+                    const lidRY = -15 + (1 - blinkR) * 30;
+                    eyelidL.setAttribute("d", `M -95 -15 Q -60 -60 -25 -15 L -25 ${lidLY} Q -60 ${lidLY} -95 ${lidLY} Z`);
+                    eyelidR.setAttribute("d", `M 25 -15 Q 60 -60 95 -15 L 95 ${lidRY} Q 60 ${lidRY} 25 ${lidRY} Z`);
+
+
+                    // --- 3. 瞳の追従（視線） ---
+                    // 顔の向き(yaw/pitch)に合わせて瞳孔とハイライトを動かす
+                    const pupilX = yaw * 18;
+                    const pupilY = pitch * 15;
+                    pupilL.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+                    highL.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+                    pupilR.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+                    highR.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+
+
+                    // --- 4. 眉毛の動き ---
+                    // 目と眉毛の距離から、怒り/驚きの表情を作る
+                    const browElevL = (lms[159].y - lms[105].y) / faceH;
+                    const browElevR = (lms[386].y - lms[334].y) / faceH;
+                    
+                    const bY_L = (0.13 - browElevL) * 200; // 上下
+                    const bY_R = (0.13 - browElevR) * 200;
+                    // 眉毛の角度（内側が上がるか下がるか）
+                    const bRotL = (0.13 - browElevL) * 100;
+                    const bRotR = -(0.13 - browElevR) * 100;
+
+                    browL.style.transform = `translateY(${bY_L}px) rotate(${bRotL}deg)`;
+                    browR.style.transform = `translateY(${bY_R}px) rotate(${bRotR}deg)`;
+
+
+                    // --- 5. 口の動き（笑顔と開閉） ---
+                    const mouthOpen = getDist(lms[13], lms[14]) / faceH; // 縦の開き
+                    const mouthSmile = getDist(lms[61], lms[291]) / faceW; // 横の広がり
+
+                    // 基準値からの変化量を計算
+                    const openM = Math.min(1, Math.max(0, mouthOpen * 8)); // 0(閉) ～ 1(大開)
+                    const smileM = Math.min(1, Math.max(0, (mouthSmile - 0.35) * 5)); // 0(無表情) ～ 1(笑顔)
+
+                    // パス(SVG)を再構築して口の形を自在に操る
+                    const mWidth = 20 + smileM * 15 - openM * 5; // 笑うと横に広がる、開くと少し縮む
+                    const mTop = 75 - smileM * 5 - openM * 2;   // 笑うと口角が上がる
+                    const mBottom = 75 + openM * 35;            // 開くと下唇が下がる
+                    const mCornerY = 75 - smileM * 10;          // 口角のY座標
+
+                    mouth.setAttribute("d", `M ${-mWidth} ${mCornerY} Q 0 ${mTop} ${mWidth} ${mCornerY} Q 0 ${mBottom} ${-mWidth} ${mCornerY} Z`);
+                }
+            }
+        };
+    </script>
 </body>
 </html>
